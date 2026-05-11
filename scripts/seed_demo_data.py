@@ -79,16 +79,16 @@ async def seed(db_url: str = "sqlite+aiosqlite:///./urbanpulse.db") -> None:
         # Countries
         country_map: dict[str, int] = {}
         for iso, name in COUNTRIES.items():
-            row = (await s.execute(select(DimCountry).where(DimCountry.iso_code == iso))).scalar_one_or_none()
+            row = (await s.execute(select(DimCountry).where(DimCountry.iso_code == iso))).scalars().first()
             if not row:
                 row = DimCountry(iso_code=iso, name=name, continent="Europe")
                 s.add(row); await s.flush()
             country_map[iso] = row.country_id
 
-        # Parameters
+        # Parameters (use .first() to handle duplicates from real API seeding)
         param_map: dict[str, int] = {}
         for i, param in enumerate(PARAMS, 1):
-            row = (await s.execute(select(DimParameter).where(DimParameter.name == param))).scalar_one_or_none()
+            row = (await s.execute(select(DimParameter).where(DimParameter.name == param))).scalars().first()
             if not row:
                 g = WHO_GUIDELINES.get(param, {})
                 row = DimParameter(
@@ -137,7 +137,7 @@ async def seed(db_url: str = "sqlite+aiosqlite:///./urbanpulse.db") -> None:
                     rows.append({
                         "location_id": loc_id,
                         "parameter_id": pid,
-                        "measured_at": ts.isoformat(),
+                        "measured_at": ts.strftime("%Y-%m-%d %H:%M:%S"),
                         "value": val,
                         "unit": "ug/m3",
                     })

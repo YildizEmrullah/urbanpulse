@@ -177,7 +177,7 @@ async def ingest_recent_measurements(
             rows_to_insert.append({
                 "location_id": db_loc_id,
                 "parameter_id": param_id,
-                "measured_at": measured_at.isoformat(),
+                "measured_at": measured_at.strftime("%Y-%m-%d %H:%M:%S"),
                 "value": float(value),
                 "unit": m.get("unit", "µg/m³"),
             })

@@ -35,9 +35,9 @@ async def get_measurements(
     if cached:
         return cached
 
-    # Resolve parameter_id
-    param_stmt = select(DimParameter).where(DimParameter.name == parameter.lower())
-    param = (await session.execute(param_stmt)).scalar_one_or_none()
+    # Resolve parameter_id — order by ID so demo data (lower IDs) takes precedence
+    param_stmt = select(DimParameter).where(DimParameter.name == parameter.lower()).order_by(DimParameter.parameter_id)
+    param = (await session.execute(param_stmt)).scalars().first()
     if param is None:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail=f"Parameter '{parameter}' not found")

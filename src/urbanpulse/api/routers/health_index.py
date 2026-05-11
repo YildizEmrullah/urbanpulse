@@ -24,7 +24,7 @@ async def get_health_index(
         JOIN dim_parameter p ON p.parameter_id = m.parameter_id
         JOIN dim_location l ON l.location_id = m.location_id
         WHERE lower(l.city) = lower(:city)
-          AND m.measured_at >= datetime('now', '-1 hours')
+          AND m.measured_at >= datetime('now', '-24 hours')
         GROUP BY p.name
     """)
     result = await session.execute(sql, {"city": city})
@@ -61,7 +61,7 @@ async def city_ranking(session: AsyncSession = Depends(db)):
         FROM fact_measurement m
         JOIN dim_parameter p ON p.parameter_id = m.parameter_id
         JOIN dim_location l ON l.location_id = m.location_id
-        WHERE m.measured_at >= datetime('now', '-2 hours')
+        WHERE m.measured_at >= datetime('now', '-24 hours')
           AND l.city IS NOT NULL
         GROUP BY l.city, p.name
         ORDER BY l.city

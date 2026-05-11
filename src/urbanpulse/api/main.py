@@ -1,11 +1,11 @@
 """FastAPI application factory with lifespan, middleware, and router registration."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 
 from urbanpulse.api.routers import anomalies, health_index, locations, measurements, predictions
 from urbanpulse.config import settings
@@ -21,12 +21,13 @@ logging.basicConfig(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: initialise DB and start background scheduler. Shutdown: stop scheduler."""
+    """Startup: initialise DB, fire background ingestion, start scheduler. Shutdown: stop scheduler."""
     logger.info("UrbanPulse API starting up...")
     await init_db()
     from urbanpulse.worker.tasks import startup_task
     from urbanpulse.worker.scheduler import start_scheduler
-    await startup_task()
+    # Fire ingestion in background so the API serves requests immediately
+    asyncio.create_task(startup_task())
     scheduler = start_scheduler()
     yield
     from urbanpulse.worker.scheduler import stop_scheduler

@@ -106,7 +106,7 @@ async def _run_prediction_job(location_id: int, parameter: str) -> None:
         param_result = await session.execute(
             select(DimParameter).where(DimParameter.name == parameter.lower())
         )
-        param = param_result.scalar_one_or_none()
+        param = param_result.scalars().first()
         if param is None:
             return
 

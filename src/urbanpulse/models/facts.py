@@ -3,7 +3,6 @@
 from datetime import datetime
 
 from sqlalchemy import (
-    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
@@ -24,7 +23,8 @@ class FactMeasurement(Base):
         UniqueConstraint("location_id", "parameter_id", "measured_at", name="uq_measurement"),
     )
 
-    measurement_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # Integer (not BigInteger) maps to INTEGER PRIMARY KEY in SQLite = rowid alias → auto-increments
+    measurement_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     location_id: Mapped[int] = mapped_column(ForeignKey("dim_location.location_id"), nullable=False, index=True)
     parameter_id: Mapped[int] = mapped_column(ForeignKey("dim_parameter.parameter_id"), nullable=False, index=True)
     measured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
@@ -45,7 +45,7 @@ class FactMlPrediction(Base):
         UniqueConstraint("location_id", "parameter_id", "model_version", "predicted_for", name="uq_prediction"),
     )
 
-    prediction_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    prediction_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     location_id: Mapped[int] = mapped_column(ForeignKey("dim_location.location_id"), nullable=False, index=True)
     parameter_id: Mapped[int] = mapped_column(ForeignKey("dim_parameter.parameter_id"), nullable=False, index=True)
     model_version: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -61,7 +61,7 @@ class FactMlPrediction(Base):
 class FactAnomalyEvent(Base):
     __tablename__ = "fact_anomaly_event"
 
-    event_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    event_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     location_id: Mapped[int] = mapped_column(ForeignKey("dim_location.location_id"), nullable=False, index=True)
     parameter_id: Mapped[int] = mapped_column(ForeignKey("dim_parameter.parameter_id"), nullable=False, index=True)
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)

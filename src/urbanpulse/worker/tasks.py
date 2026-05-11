@@ -16,9 +16,22 @@ _param_name_to_id: dict[str, int] = {}
 
 
 async def startup_task() -> None:
-    """Run once on startup: seed DB, discover stations, ingest recent data."""
+    """Run once on startup: seed DB, discover stations, ingest recent data.
+
+    Skips live OpenAQ ingestion if demo data already exists.
+    """
     logger.info("Running startup task...")
     async with AsyncSessionLocal() as session:
+        from sqlalchemy import text as _text
+        result = await session.execute(_text("SELECT COUNT(*) FROM fact_measurement"))
+        existing_count = result.scalar()
+        if existing_count > 0:
+            logger.info("Demo/existing data detected (%d rows) — skipping live ingestion", existing_count)
+            # Populate caches from existing DB data for scheduled tasks
+            await _refresh_location_cache(session)
+            await _refresh_param_cache(session)
+            return
+
         from urbanpulse.ingestion.pipeline import (
             ingest_recent_measurements,
             seed_locations,
@@ -138,3 +151,12 @@ async def _refresh_location_cache(session) -> None:
     locs = result.scalars().all()
     for loc in locs:
         _openaq_to_db[loc.openaq_id] = loc.location_id
+
+
+async def _refresh_param_cache(session) -> None:
+    """Refresh in-memory parameter name→id cache from DB."""
+    from sqlalchemy import select
+    result = await session.execute(select(DimParameter))
+    params = result.scalars().all()
+    for p in params:
+        _param_name_to_id[p.name] = p.parameter_id

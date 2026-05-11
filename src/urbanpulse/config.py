@@ -6,15 +6,19 @@ from typing import Optional
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ROOT = Path(__file__).parents[3]
+PROJECT_ROOT = Path(__file__).parents[2]  # src/urbanpulse/config.py → project root
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=str(PROJECT_ROOT / ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     # ── Database ──────────────────────────────────────────────────────
     database_url: str = Field(
-        default="sqlite+aiosqlite:///./urbanpulse.db",
+        default=f"sqlite+aiosqlite:///{PROJECT_ROOT}/urbanpulse.db",
         description="SQLAlchemy async URL. SQLite by default; set postgresql+asyncpg://... for Postgres.",
     )
 
@@ -36,7 +40,7 @@ class Settings(BaseSettings):
     retrain_interval_hours: int = Field(default=24)
 
     # ── Paths ─────────────────────────────────────────────────────────
-    models_dir: Path = Field(default=ROOT / "models")
+    models_dir: Path = Field(default=PROJECT_ROOT / "models")
 
     @model_validator(mode="after")
     def _ensure_dirs(self) -> "Settings":
