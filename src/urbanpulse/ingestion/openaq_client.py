@@ -52,12 +52,12 @@ async def fetch_locations(country_iso: str, limit: int = 100) -> list[dict]:
             return []
 
 
-async def fetch_locations_by_bbox(lat: float, lon: float, radius_km: int = 50) -> list[dict]:
-    """Fetch stations within radius_km of a coordinate."""
+async def fetch_locations_by_bbox(lat: float, lon: float, radius_km: int = 25) -> list[dict]:
+    """Fetch stations within radius_km of a coordinate. OpenAQ v3 max radius = 25000m."""
     url = f"{settings.openaq_base_url}/locations"
     params = {
         "coordinates": f"{lat},{lon}",
-        "radius": radius_km * 1000,
+        "radius": min(radius_km * 1000, 25000),
         "limit": 50,
     }
     async with httpx.AsyncClient(headers=_build_headers(), timeout=30) as client:
@@ -70,16 +70,47 @@ async def fetch_locations_by_bbox(lat: float, lon: float, radius_km: int = 50) -
             return []
 
 
-async def fetch_measurements(
-    location_id: int,
+async def fetch_location_sensors(location_id: int) -> list[dict]:
+    """Return sensors for a location: [{sensor_id, parameter_name, unit}]
+
+    OpenAQ v3: each location has sensors, each sensor measures one parameter.
+    """
+    url = f"{settings.openaq_base_url}/locations/{location_id}"
+    async with httpx.AsyncClient(headers=_build_headers(), timeout=20) as client:
+        try:
+            r = await client.get(url)
+            r.raise_for_status()
+            results = r.json().get("results", [])
+            if not results:
+                return []
+            sensors = results[0].get("sensors", [])
+            return [
+                {
+                    "sensor_id": s["id"],
+                    "parameter_name": s.get("parameter", {}).get("name", ""),
+                    "unit": s.get("parameter", {}).get("units", "µg/m³"),
+                }
+                for s in sensors
+                if s.get("parameter", {}).get("name", "") in PARAMETERS_OF_INTEREST
+            ]
+        except Exception as exc:
+            logger.warning("OpenAQ sensors fetch failed (loc=%d): %s", location_id, exc)
+            return []
+
+
+async def fetch_sensor_measurements(
+    sensor_id: int,
     date_from: datetime,
     date_to: datetime,
     limit: int = 1000,
 ) -> list[dict]:
-    """Fetch measurements for one station in a time window."""
-    url = f"{settings.openaq_base_url}/measurements"
+    """Fetch measurements for one sensor in a time window.
+
+    OpenAQ v3 endpoint: GET /v3/sensors/{sensor_id}/measurements
+    Returns normalized list: [{parameter, value, measured_at, unit}]
+    """
+    url = f"{settings.openaq_base_url}/sensors/{sensor_id}/measurements"
     params = {
-        "locations_id": location_id,
         "date_from": date_from.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "date_to": date_to.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "limit": limit,
@@ -88,16 +119,51 @@ async def fetch_measurements(
         try:
             r = await client.get(url, params=params)
             r.raise_for_status()
-            return r.json().get("results", [])
+            results = r.json().get("results", [])
+            normalized = []
+            for m in results:
+                ts = m.get("period", {}).get("datetimeTo", {}).get("utc") or \
+                     m.get("period", {}).get("datetimeFrom", {}).get("utc")
+                if ts and m.get("value") is not None:
+                    normalized.append({
+                        "parameter": m.get("parameter", {}).get("name", ""),
+                        "value": float(m["value"]),
+                        "measured_at": ts,
+                        "unit": m.get("parameter", {}).get("units", "µg/m³"),
+                    })
+            return normalized
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 429:
-                logger.warning("OpenAQ rate-limited — backing off")
+                logger.warning("OpenAQ rate-limited — sensor=%d", sensor_id)
             else:
-                logger.warning("OpenAQ measurements fetch failed (loc=%d): %s", location_id, exc)
+                logger.warning("OpenAQ measurements fetch failed (sensor=%d): %s", sensor_id, exc)
             return []
         except Exception as exc:
-            logger.warning("OpenAQ measurements fetch failed (loc=%d): %s", location_id, exc)
+            logger.warning("OpenAQ measurements fetch failed (sensor=%d): %s", sensor_id, exc)
             return []
+
+
+async def fetch_measurements(
+    location_id: int,
+    date_from: datetime,
+    date_to: datetime,
+    limit: int = 1000,
+) -> list[dict]:
+    """Fetch all measurements for a location across all relevant sensors.
+
+    Aggregates results from all sensors into one flat list.
+    """
+    sensors = await fetch_location_sensors(location_id)
+    all_measurements = []
+    for sensor in sensors:
+        measurements = await fetch_sensor_measurements(
+            sensor["sensor_id"], date_from, date_to, limit=limit
+        )
+        for m in measurements:
+            if not m.get("parameter"):
+                m["parameter"] = sensor["parameter_name"]
+        all_measurements.extend(measurements)
+    return all_measurements
 
 
 async def fetch_parameters() -> list[dict]:

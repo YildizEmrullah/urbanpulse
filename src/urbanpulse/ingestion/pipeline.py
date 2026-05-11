@@ -4,7 +4,6 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, text
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from urbanpulse.ingestion.openaq_client import (
@@ -15,7 +14,6 @@ from urbanpulse.ingestion.openaq_client import (
     fetch_parameters,
 )
 from urbanpulse.models.dimensions import DimCountry, DimLocation, DimParameter, WHO_GUIDELINES
-from urbanpulse.models.facts import FactMeasurement
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +86,7 @@ async def seed_locations(session: AsyncSession) -> dict[int, int]:
     openaq_to_db: dict[int, int] = {}
 
     for city_info in TARGET_CITIES:
-        stations = await fetch_locations_by_bbox(city_info["lat"], city_info["lon"], radius_km=30)
+        stations = await fetch_locations_by_bbox(city_info["lat"], city_info["lon"], radius_km=25)
         if not stations:
             logger.warning("No stations found near %s", city_info["city"])
             continue
@@ -135,7 +133,7 @@ async def ingest_recent_measurements(
     session: AsyncSession,
     openaq_to_db: dict[int, int],
     param_name_to_id: dict[str, int],
-    hours_back: int = 48,
+    hours_back: int = 72,
 ) -> int:
     """Fetch measurements for the last `hours_back` hours and upsert into DB.
 
@@ -144,6 +142,8 @@ async def ingest_recent_measurements(
     date_to = datetime.now(timezone.utc)
     date_from = date_to - timedelta(hours=hours_back)
     total = 0
+
+    bind = session.get_bind()
 
     for openaq_loc_id, db_loc_id in openaq_to_db.items():
         raw = await fetch_measurements(openaq_loc_id, date_from, date_to)
@@ -161,7 +161,12 @@ async def ingest_recent_measurements(
             if value is None or value < 0:
                 continue
 
-            measured_at_str = m.get("date", {}).get("utc") or m.get("date", {}).get("local")
+            # fetch_sensor_measurements returns "measured_at" as a top-level ISO string
+            measured_at_str = (
+                m.get("measured_at")
+                or (m.get("date") or {}).get("utc")
+                or (m.get("date") or {}).get("local")
+            )
             if not measured_at_str:
                 continue
             try:
@@ -172,27 +177,26 @@ async def ingest_recent_measurements(
             rows_to_insert.append({
                 "location_id": db_loc_id,
                 "parameter_id": param_id,
-                "measured_at": measured_at,
+                "measured_at": measured_at.isoformat(),
                 "value": float(value),
-                "unit": m.get("unit"),
+                "unit": m.get("unit", "µg/m³"),
             })
 
         if not rows_to_insert:
             continue
 
-        # Upsert: ignore conflicts (same location + parameter + timestamp)
-        for row in rows_to_insert:
-            stmt = select(FactMeasurement).where(
-                FactMeasurement.location_id == row["location_id"],
-                FactMeasurement.parameter_id == row["parameter_id"],
-                FactMeasurement.measured_at == row["measured_at"],
-            )
-            existing = (await session.execute(stmt)).scalar_one_or_none()
-            if existing is None:
-                session.add(FactMeasurement(**row))
-                total += 1
-
+        # Raw INSERT OR IGNORE — avoids SQLite BigInteger autoincrement ORM issue
+        await session.execute(
+            text("""
+                INSERT OR IGNORE INTO fact_measurement
+                    (location_id, parameter_id, measured_at, value, unit)
+                VALUES
+                    (:location_id, :parameter_id, :measured_at, :value, :unit)
+            """),
+            rows_to_insert,
+        )
         await session.commit()
+        total += len(rows_to_insert)
         logger.debug("Ingested %d measurements for location %d", len(rows_to_insert), openaq_loc_id)
 
     logger.info("Ingestion complete: %d new measurements inserted", total)
