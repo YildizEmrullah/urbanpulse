@@ -1,3 +1,14 @@
+---
+title: UrbanPulse
+emoji: 🌍
+colorFrom: blue
+colorTo: green
+sdk: streamlit
+sdk_version: 1.35.0
+app_file: app.py
+pinned: false
+---
+
 # UrbanPulse 🌍
 
 > **Real-time European Air Quality Intelligence** — data engineering, XGBoost forecasting, anomaly detection, EU CAQI health index, FastAPI + Streamlit, Docker Compose.
