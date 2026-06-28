@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: urbanpulse-api
+    runtime: python
+    buildCommand: pip install -e .
+    startCommand: python scripts/seed_demo_data.py && uvicorn src.urbanpulse.api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:///./urbanpulse.db
+      - key: LOG_LEVEL
+        value: INFO
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: OPENAQ_API_KEY
+        sync: false
+
+  - type: web
+    name: urbanpulse-dashboard
+    runtime: python
+    buildCommand: pip install -e .
+    startCommand: streamlit run src/urbanpulse/dashboard/app.py --server.port $PORT --server.address 0.0.0.0
+    envVars:
+      - key: API_BASE_URL
+        value: https://urbanpulse-api.onrender.com/api/v1
