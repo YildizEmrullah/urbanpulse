@@ -69,7 +69,8 @@ def _random_walk(base: float, hours: int) -> list[float]:
 
 
 async def seed(db_url: str = "sqlite+aiosqlite:///./urbanpulse.db") -> None:
-    engine = create_async_engine(db_url, connect_args={"check_same_thread": False})
+    connect_args = {"check_same_thread": False} if "sqlite" in db_url else {}
+    engine = create_async_engine(db_url, connect_args=connect_args)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -137,21 +138,29 @@ async def seed(db_url: str = "sqlite+aiosqlite:///./urbanpulse.db") -> None:
                     rows.append({
                         "location_id": loc_id,
                         "parameter_id": pid,
-                        "measured_at": ts.strftime("%Y-%m-%d %H:%M:%S"),
+                        "measured_at": ts,
                         "value": val,
                         "unit": "ug/m3",
                     })
 
-            # INSERT OR IGNORE for SQLite
-            await conn.execute(
-                text("""
+            is_pg = "postgresql" in db_url
+            upsert_sql = (
+                """
+                    INSERT INTO fact_measurement
+                        (location_id, parameter_id, measured_at, value, unit)
+                    VALUES
+                        (:location_id, :parameter_id, :measured_at, :value, :unit)
+                    ON CONFLICT DO NOTHING
+                """
+                if is_pg else
+                """
                     INSERT OR IGNORE INTO fact_measurement
                         (location_id, parameter_id, measured_at, value, unit)
                     VALUES
                         (:location_id, :parameter_id, :measured_at, :value, :unit)
-                """),
-                rows,
+                """
             )
+            await conn.execute(text(upsert_sql), rows)
             total += len(rows)
             print(f"  OK {city}: {len(rows)} rows")
 
@@ -160,6 +169,8 @@ async def seed(db_url: str = "sqlite+aiosqlite:///./urbanpulse.db") -> None:
 
 
 if __name__ == "__main__":
+    import os
     print("Seeding UrbanPulse demo data...")
-    asyncio.run(seed())
+    db_url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./urbanpulse.db")
+    asyncio.run(seed(db_url))
     print("Dashboard: http://localhost:8501")
