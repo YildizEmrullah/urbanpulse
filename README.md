@@ -3,9 +3,7 @@ title: UrbanPulse
 emoji: 🌍
 colorFrom: blue
 colorTo: green
-sdk: streamlit
-sdk_version: 1.35.0
-app_file: app.py
+sdk: docker
 pinned: false
 ---
 
