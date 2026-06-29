@@ -1,5 +1,6 @@
 """UrbanPulse Streamlit dashboard — 5-page air quality intelligence app."""
 
+import os
 import streamlit as st
 
 st.set_page_config(
@@ -8,6 +9,31 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+
+@st.cache_resource(show_spinner="Setting up demo data...")
+def _seed_if_needed():
+    """Seed SQLite demo data on first run (skipped for PostgreSQL)."""
+    db_url = os.getenv("DATABASE_URL", "")
+    if "postgresql" in db_url:
+        return "postgresql-mode"
+    import sqlite3, subprocess, sys
+    from pathlib import Path
+    for candidate in [Path("urbanpulse.db"), Path(__file__).parents[3] / "urbanpulse.db"]:
+        try:
+            if candidate.exists():
+                conn = sqlite3.connect(str(candidate))
+                count = conn.execute("SELECT COUNT(*) FROM fact_measurement").fetchone()[0]
+                conn.close()
+                if count > 0:
+                    return count
+        except Exception:
+            pass
+    subprocess.run([sys.executable, "scripts/seed_demo_data.py"], check=False)
+    return "seeded"
+
+
+_seed_if_needed()
 
 from urbanpulse.dashboard import api_client as api
 
