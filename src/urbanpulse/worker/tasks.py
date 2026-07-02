@@ -108,7 +108,7 @@ async def anomaly_scan_task() -> None:
                        p.who_24h_guideline, m.measured_at, m.value
                 FROM fact_measurement m
                 JOIN dim_parameter p ON p.parameter_id = m.parameter_id
-                WHERE m.measured_at >= datetime('now', '-48 hours')
+                WHERE m.measured_at >= NOW() - INTERVAL '48 hours'
                 ORDER BY m.location_id, p.name, m.measured_at
             """)
         )
