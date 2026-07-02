@@ -61,7 +61,7 @@ async def get_measurements(
             for r in rows
         ]
     else:
-        trunc = "strftime('%Y-%m-%d %H:00:00', measured_at)" if aggregation == "hourly" else "date(measured_at)"
+        trunc = "date_trunc('hour', measured_at)" if aggregation == "hourly" else "DATE(measured_at)"
         sql = text(f"""
             SELECT {trunc} AS bucket,
                    AVG(value) AS avg_value,
