@@ -185,16 +185,24 @@ async def ingest_recent_measurements(
         if not rows_to_insert:
             continue
 
-        # Raw INSERT OR IGNORE — avoids SQLite BigInteger autoincrement ORM issue
-        await session.execute(
-            text("""
+        bind = session.get_bind()
+        dialect = bind.dialect.name if hasattr(bind, "dialect") else "sqlite"
+        if dialect == "postgresql":
+            upsert_sql = """
+                INSERT INTO fact_measurement
+                    (location_id, parameter_id, measured_at, value, unit)
+                VALUES
+                    (:location_id, :parameter_id, :measured_at, :value, :unit)
+                ON CONFLICT DO NOTHING
+            """
+        else:
+            upsert_sql = """
                 INSERT OR IGNORE INTO fact_measurement
                     (location_id, parameter_id, measured_at, value, unit)
                 VALUES
                     (:location_id, :parameter_id, :measured_at, :value, :unit)
-            """),
-            rows_to_insert,
-        )
+            """
+        await session.execute(text(upsert_sql), rows_to_insert)
         await session.commit()
         total += len(rows_to_insert)
         logger.debug("Ingested %d measurements for location %d", len(rows_to_insert), openaq_loc_id)
